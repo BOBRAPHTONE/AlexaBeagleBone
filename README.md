@@ -5,7 +5,7 @@
 ### Contributors
  
 * Sam Machin
-* Mike Erdahlk
+* Mike Erdahl
  
 ---
  
