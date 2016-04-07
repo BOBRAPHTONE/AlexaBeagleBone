@@ -1,4 +1,4 @@
-# AlexaPi
+# AlexaBeagleBone
  
 ---
  
@@ -23,6 +23,7 @@ writing, several GPIO libraries are broken.
 
 Special thanks to Sam Machin for a great starting point for us Beagle
 enthusists!
+
 ---
  
 ### Requirements
@@ -62,6 +63,21 @@ Run the setup script
 Follow instructions....
 
 Enjoy :)
+
+### Changelog
+
+Version 0.1
+
+* Alexa volume commands adjust volume without interrupting stream
+* iHeartRadio tested extensively - Alexa will properly add stations you request
+* New audio stream requests will stop currently playing stream and start
+
+Known Issues
+
+* becoming clear several objects need to be created to clean up code
+* CPU usage still seems too high - ranges from ~70-80% at 1GHz
+* probably many more!
+
 
 ### Issues/Bugs etc.
 

@@ -17,6 +17,8 @@ import threading
 import signal
 import sys
 
+version 0.1
+
 # Catch ctrl-c and clean up GPIO
 def signal_handler(signal, frame):
 	GPIO.cleanup()
@@ -135,7 +137,9 @@ def alexa_playback_progress_report_request(requestType, playerActivity, streamid
 	# streamId                  Specifies the identifier for the current stream.
 	# offsetInMilliseconds      Specifies the current position in the track, in milliseconds.
 	# playerActivity            IDLE, PAUSED, or PLAYING
-	if debug: print("{}Sending Playback Progress Report Request...{}".format(bcolors.OKBLUE, bcolors.ENDC))
+	if debug: 
+		print("{}Sending Playback Progress Report Request...{} {}\n".format(
+			bcolors.OKBLUE, bcolors.ENDC, requestType.upper()))
 	headers = {'Authorization' : 'Bearer %s' % gettoken()}
 	d = {
 		"messageHeader": {},
@@ -175,11 +179,12 @@ def alexa_playback_progress_report_request(requestType, playerActivity, streamid
 		if debug: print("{}Playback Progress Report was {}Successful!{}".format(bcolors.OKBLUE, bcolors.OKGREEN, bcolors.ENDC))
 
 def process_response(r):
-	global nav_token, streamurl, streamid
+	global nav_token, streamurl, streamid, audioplaying
 	if debug: print("{}Processing Request Response...{}".format(bcolors.OKBLUE, bcolors.ENDC))
 	nav_token = ""
 	streamurl = ""
 	streamid = ""
+
 	if r.status_code == 200:
 		for v in r.headers['content-type'].split(";"):
 			if re.match('.*boundary.*', v):
@@ -194,12 +199,14 @@ def process_response(r):
 				c_type = m.group(0)
 				if c_type == 'application/json':
 					json_r = d.split('\r\n\r\n')[1].rstrip('\r\n--')
-					if debug: print("{}JSON String Returned:{} {}".format(bcolors.OKBLUE, bcolors.ENDC, json_r))
+					if debug:
+						print("{}JSON String Returned:{} {}".format(bcolors.OKBLUE,
+							bcolors.ENDC, json.dumps(json.loads(json_r), indent=2)))
 					nav_token = json_string_value(json_r, "navigationToken")
 					streamurl = json_string_value(json_r, "streamUrl")
 					if json_r.find('"progressReportRequired":false') == -1:
 						streamid = json_string_value(json_r, "streamId")
-					if streamurl.find("cid:") == 0:					
+					if streamurl.find("cid:") == 0:		
 						streamurl = ""
 					playBehavior = json_string_value(json_r, "playBehavior")
 					if n == None and streamurl != "" and streamid.find("cid:") == -1:
@@ -207,13 +214,40 @@ def process_response(r):
 						streamurl = ""
 						pThread.start()
 						return
+					if json_r.find('"namespace": "Speaker"') == -1:
+						# User requested an audio output change
+						adjustmentType = json_string_value(json_r, "adjustmentType")
+						if adjustmentType:
+							level = json_integer_value(json_r, "volume")
+							volume = p.audio_get_volume()
+							if adjustmentType == "relative":
+								volume = volume+level
+							else:
+								volume = level
+							if volume > 100:
+								volume = 100
+							elif volume < 0:
+								volume = 0
+							p.audio_set_volume(volume)
 				elif c_type == 'audio/mpeg':
+					if debug: 
+						print "audio/mpeg"
+						print "audioplaying", audioplaying
+					if audioplaying:
+						# Kill current stream so we can start a new one
+						# TODO: if user asks for invalid stream, try
+						#       re-starting previous stream
+						p.stop()
+						audioplaying = False
 					audio = d.split('\r\n\r\n')[1].rstrip('--')
 					if audio != "":
 						with open(path + "response.mp3", 'wb') as f:
 							f.write(audio)
 						GPIO.output(rec_light, GPIO.LOW)
 						play_audio("response.mp3")
+				else:
+					print "*** Unknown Content Type: ", c_type
+					
 	elif r.status_code == 204:
 		if debug: print("{}Request Response is null {}(This is OKAY!){}".format(bcolors.OKBLUE, bcolors.OKGREEN, bcolors.ENDC))
 	else:
@@ -234,6 +268,14 @@ def json_string_value(json_r, item):
 		return m.group(0)
 	else:
 		return ""
+		
+def json_integer_value(json_r, item):
+	m = re.search('(?<={}":)(-?[0-9]+)'.format(item), json_r)
+	if m:
+		if debug: print("{}{}:{} {}".format(bcolors.OKBLUE, item, bcolors.ENDC, m.group(0)))
+		return int(m.group(0))
+	else:
+		return ""
 
 def play_audio(file):
 	global nav_token, p, audioplaying
@@ -251,15 +293,16 @@ def play_audio(file):
 		m = i.media_new(mrl)
 		p = i.media_player_new()
 		p.set_media(m)
+		volume = p.audio_get_volume()  # use value set by mixer
+		if volume == 0:
+			print "WARNING: ALSA reporting volume is zero (off)"
 		mm = m.event_manager()
 		#mm.event_attach(vlc.EventType.MediaPlayerTimeChanged, pos_callback)
 		#mm.event_attach(vlc.EventType.MediaParsedChanged, meta_callback, m)
 		mm.event_attach(vlc.EventType.MediaStateChanged, state_callback, p)
 		audioplaying = True
-		p.audio_set_volume(100)
+		p.audio_set_volume(volume)
 		p.play()
-		while audioplaying:
-			continue
 		GPIO.output(plb_light, GPIO.LOW)
 	else:
 		print("(play_audio) mrl = Nothing!")
@@ -275,36 +318,44 @@ def state_callback(event, player):
 	#5: 'Stopped'
 	#6: 'Ended'
 	#7: 'Error'
-	if debug: print("{}Player State:{} {}".format(bcolors.OKGREEN, bcolors.ENDC, state))
+	if debug: 
+		print("\n\n{}Player State:{} {}\nStreamID: {}\n".format(bcolors.OKGREEN, 
+			bcolors.ENDC, state, streamid))
+		
 	if state == 3:		#Playing
 		if streamid != "":
-			rThread = threading.Thread(target=alexa_playback_progress_report_request, args=("STARTED", "PLAYING", streamid))
+			rThread = threading.Thread(target=alexa_playback_progress_report_request, 
+				args=("STARTED", "PLAYING", streamid))
 			rThread.start()
+	
 	elif state == 5:	#Stopped
 		audioplaying = False
 		if streamid != "":
-			rThread = threading.Thread(target=alexa_playback_progress_report_request, args=("INTERRUPTED", "IDLE", streamid))
+			rThread = threading.Thread(target=alexa_playback_progress_report_request, 
+				args=("INTERRUPTED", "IDLE", streamid))
 			rThread.start()
-		streamurl = ""
-		streamid = ""
-		nav_token = ""
 	elif state == 6:	#Ended
 		audioplaying = False
 		if streamid != "":
-			rThread = threading.Thread(target=alexa_playback_progress_report_request, args=("FINISHED", "IDLE", streamid))
+			rThread = threading.Thread(target=alexa_playback_progress_report_request, 
+				args=("FINISHED", "IDLE", streamid))
 			rThread.start()
 			streamid = ""
 		if streamurl != "":
+			print "** finished - play_audio"
 			pThread = threading.Thread(target=play_audio, args=(streamurl,))
 			streamurl = ""
 			pThread.start()
 		elif nav_token != "":
+			print "** finished - alexa_getnextitem"
 			gThread = threading.Thread(target=alexa_getnextitem, args=(nav_token,))
 			gThread.start()
+	
 	elif state == 7:
 		audioplaying = False
 		if streamid != "":
-			rThread = threading.Thread(target=alexa_playback_progress_report_request, args=("ERROR", "IDLE", streamid))
+			rThread = threading.Thread(target=alexa_playback_progress_report_request, 
+				args=("ERROR", "IDLE", streamid))
 			rThread.start()
 		streamurl = ""
 		streamid = ""
@@ -328,7 +379,8 @@ def meta_callback(event, media):
 def pos_callback(event):
 	global position
 	position = event.u.new_time
-	if debug: print("{}Player Position:{} {}".format(bcolors.OKBLUE, bcolors.ENDC, format_time(position)))
+	if debug: print("{}Player Position:{} {}".format(bcolors.OKBLUE,
+		bcolors.ENDC, format_time(position)))
 
 def format_time(self, milliseconds):
 	"""formats milliseconds to h:mm:ss
@@ -338,53 +390,14 @@ def format_time(self, milliseconds):
 	h, m = divmod(m, 60)
 	return "%d:%02d:%02d" % (h, m, s)
 
-def start_old():
-	global audioplaying, p, recorded
-	inp = None
-	last = GPIO.input(button)
-	print("{}Ready to Record.{}".format(bcolors.OKBLUE, bcolors.ENDC))
-	while True:
-		# wait for an edge event
-		if recorded == False:
-			print "Waiting for button press"
-			GPIO.wait_for_edge(button,GPIO.BOTH)
-		val = GPIO.input(button)
-		if val != last:
-			last = val
-			if val == 1 and recorded == True:
-				print("{}Recording Finished.{}".format(bcolors.OKBLUE, bcolors.ENDC))
-				rf = open(path+'recording.wav', 'w')
-				rf.write(audio)
-				rf.close()
-				inp = None
-				recorded = False
-				alexa_speech_recognizer()
-			elif val == 0:
-				GPIO.output(rec_light, GPIO.HIGH)
-				print("{}Recording...{}".format(bcolors.OKBLUE, bcolors.ENDC))
-				inp = alsaaudio.PCM(alsaaudio.PCM_CAPTURE, alsaaudio.PCM_NORMAL, device)
-				inp.setchannels(1)
-				inp.setrate(16000)
-				inp.setformat(alsaaudio.PCM_FORMAT_S16_LE)
-				inp.setperiodsize(500)
-				audio = ""
-				if audioplaying:
-					p.stop()
-				l, data = inp.read()
-				if l:
-					audio += data
-				recorded = True
-		elif val == 0:
-			l, data = inp.read()
-			if l:
-				audio += data
-
 def start():
 	global audioplaying, p
 	while True:
 		print("{}Ready to Record.{}".format(bcolors.OKBLUE, bcolors.ENDC))
 		GPIO.wait_for_edge(button, GPIO.FALLING) # we wait for the button to be pressed
-		if audioplaying: p.stop()
+		if audioplaying:
+			volume = p.audio_get_volume() 
+			p.audio_set_volume(int(volume*.75))
 		print("{}Recording...{}".format(bcolors.OKBLUE, bcolors.ENDC))
 		GPIO.output(rec_light, GPIO.HIGH)
 		inp = alsaaudio.PCM(alsaaudio.PCM_CAPTURE, alsaaudio.PCM_NORMAL, device)
@@ -398,6 +411,7 @@ def start():
 			if l:
 				audio += data
 		print("{}Recording Finished.{}".format(bcolors.OKBLUE, bcolors.ENDC))
+		if audioplaying: p.audio_set_volume(volume) # restore volume
 		rf = open(path+'recording.wav', 'w')
 		rf.write(audio)
 		rf.close()
