@@ -1,11 +1,20 @@
 #! /bin/bash
+### BEGIN INIT INFO
+# Provides:          AlexaPi
+# Required-Start:    $all
+# Required-Stop:     $all
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: AlexaPi Service
+# Description:       Start / Stop AlexaPi Service
+### END INIT INFO
 
 exec > /var/log/alexa.log 2>&1 
 case "$1" in
 
 start)
     echo "Starting Alexa..."
-    python /root/AlexaPi/main.py &
+    sudo python /home/debian/AlexaPi/main.py &
 
 ;;
 
