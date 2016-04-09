@@ -17,7 +17,7 @@ import threading
 import signal
 import sys
 
-version 0.1
+version=0.1
 
 # Catch ctrl-c and clean up GPIO
 def signal_handler(signal, frame):
