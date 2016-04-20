@@ -56,7 +56,7 @@ Boot your fresh BeagleBone and login to a command prompt as root.
 Make sure you are in /root
 
 Clone this repo to the Pi
-`git clone https://github.com/merdahl/AlexaPi.git`
+`git clone https://github.com/merdahl/AlexaBeagleBone.git`
 Run the setup script
 `./setup.sh`
 
@@ -75,6 +75,7 @@ Version 0.1
 Known Issues
 
 * becoming clear several objects need to be created to clean up code
+* "stop" command does not stop audio stream - trivial to handle
 * CPU usage still seems too high - ranges from ~70-80% at 1GHz
 * probably many more!
 
