@@ -1,20 +1,22 @@
 #! /bin/bash
 ### BEGIN INIT INFO
-# Provides:          AlexaPi
+# Provides:          AlexaBeagleBone
 # Required-Start:    $all
 # Required-Stop:     $all
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: AlexaPi Service
-# Description:       Start / Stop AlexaPi Service
+# Short-Description: AlexaBeagleBone Service
+# Description:       Start / Stop AlexaBeagleBone Service
 ### END INIT INFO
 
 exec > /var/log/alexa.log 2>&1 
 case "$1" in
 
 start)
-    echo "Starting Alexa..."
-    sudo python /home/debian/AlexaPi/main.py &
+	echo "AlexaBeagleBone waiting for 60 seconds to acquire network address"    
+	sleep 60    # HACK: this is lazy- there are better ways to do this.
+	echo "Starting Alexa..."    
+	sudo python $HOME/AlexaBeagleBone/main.py &
 
 ;;
 
