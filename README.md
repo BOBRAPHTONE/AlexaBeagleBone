@@ -1,5 +1,9 @@
 # AlexaBeagleBone
- 
+
+I am working on taking this project in a new direction, and have started a new project, creatively called [AlexaBeagleBone2](https://github.com/merdahl/AlexaBeagleBone2).
+
+Please join me over at the new project!
+
 ---
  
 ### Contributors
